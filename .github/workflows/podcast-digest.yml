@@ -1,0 +1,99 @@
+name: MP Podcast Digest
+
+on:
+  schedule:
+    # Hourly from 12:00 to 18:00 UTC. That brackets 7 AM-1 PM EST and
+    # 8 AM-2 PM EDT, which covers the show's typical publish window in
+    # both winter and summer (no DST math needed). The state-file check
+    # in the script makes redundant runs effectively free -- they fetch
+    # the feed, see no change, and exit in <5 seconds.
+    - cron: '0 12-18 * * *'
+  workflow_dispatch:
+    inputs:
+      force_run:
+        description: 'Process the latest episode even if already seen'
+        type: boolean
+        default: false
+      dry_run:
+        description: 'Skip email send + state update; upload summary as artifact instead'
+        type: boolean
+        default: false
+
+# `contents: write` is needed so the workflow can commit the updated
+# state/last-seen.txt back to the repo after a successful run.
+permissions:
+  contents: write
+
+# Prevent two scheduled runs from racing on the state file commit.
+concurrency:
+  group: mp-podcast-digest
+  cancel-in-progress: false
+
+jobs:
+  digest:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - name: Checkout repo
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+          cache: pip
+          cache-dependency-path: scripts/requirements.txt
+
+      - name: Install ffmpeg
+        # faster-whisper shells out to ffmpeg to decode .m4a / .mp3 audio.
+        # ubuntu-latest does not ship with it pre-installed.
+        run: sudo apt-get update -qq && sudo apt-get install -y ffmpeg
+
+      - name: Install Python dependencies
+        run: pip install -r scripts/requirements.txt
+
+      - name: Cache Whisper model
+        # faster-whisper downloads ggml-small.en (~244 MB) into HF cache on
+        # first run. Caching skips that download on subsequent runs.
+        uses: actions/cache@v4
+        with:
+          path: ~/.cache/huggingface
+          key: faster-whisper-small-en-v1
+
+      - name: Run podcast digest
+        env:
+          ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}
+          GMAIL_APP_PASSWORD: ${{ secrets.GMAIL_APP_PASSWORD }}
+          GMAIL_FROM_ADDRESS: ${{ secrets.GMAIL_FROM_ADDRESS }}
+          TEAM_EMAIL_RECIPIENTS: ${{ secrets.TEAM_EMAIL_RECIPIENTS }}
+          PODCAST_FEED_URL: 'https://686f7962-44af-40e0-9559-7c93e4e096de.libsyn.com/rss'
+          STATE_FILE: state/last-seen.txt
+          EXCLUSION_FILE: podcastexclusion.md
+          PROMPT_FILE: scripts/prompts/summary.md
+          FORCE_RUN: ${{ inputs.force_run }}
+          DRY_RUN: ${{ inputs.dry_run }}
+        run: python scripts/podcast_digest.py
+
+      - name: Upload summary artifact (dry run only)
+        if: ${{ inputs.dry_run == true }}
+        uses: actions/upload-artifact@v4
+        with:
+          name: podcast-digest-dry-run
+          path: |
+            /tmp/summary.md
+            /tmp/transcript.txt
+          retention-days: 7
+          if-no-files-found: warn
+
+      - name: Commit updated state
+        if: ${{ inputs.dry_run != true }}
+        run: |
+          if git diff --quiet state/last-seen.txt; then
+            echo "No state change, nothing to commit."
+          else
+            git config user.name "github-actions[bot]"
+            git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+            git add state/last-seen.txt
+            git commit -m "MP Podcast Digest: state update"
+            git push
+          fi

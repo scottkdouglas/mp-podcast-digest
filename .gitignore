@@ -1,0 +1,12 @@
+# Local Python cache
+__pycache__/
+*.pyc
+.venv/
+
+# Local audio + transcript artifacts (workflow runs in /tmp; this catches local testing)
+*.mp3
+*.m4a
+*.wav
+local_transcript_*.txt
+local_summary_*.md
+.env
