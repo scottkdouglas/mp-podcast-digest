@@ -91,6 +91,7 @@ def fetch_latest_episode(feed_url: str) -> dict:
         "guid": (entry.get("id") or entry.get("guid") or entry.get("link") or "").strip(),
         "title": entry.get("title", "(untitled)").strip(),
         "published": entry.get("published", "").strip(),
+        "link": entry.get("link", "").strip(),
         "enclosure_url": enclosure_url,
     }
 
@@ -280,6 +281,9 @@ def main() -> int:
 
     summary = summarize(raw_transcript, clean_title, prompt_path, exclusion_rules, api_key)
     LOG.info("summary: %d chars", len(summary))
+
+    if episode["link"]:
+        summary += f"\n\n---\n\n[Listen to this episode]({episode['link']})"
 
     if dry_run:
         Path("/tmp/summary.md").write_text(summary, encoding="utf-8")
