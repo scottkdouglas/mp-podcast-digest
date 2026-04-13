@@ -2,12 +2,11 @@ name: MP Podcast Digest
 
 on:
   schedule:
-    # Hourly from 12:00 to 18:00 UTC. That brackets 7 AM-1 PM EST and
-    # 8 AM-2 PM EDT, which covers the show's typical publish window in
-    # both winter and summer (no DST math needed). The state-file check
-    # in the script makes redundant runs effectively free -- they fetch
-    # the feed, see no change, and exit in <5 seconds.
-    - cron: '0 12-18 * * *'
+    # Tuesdays only (the show's fixed publish day), hourly from 12:00
+    # to 18:00 UTC. That brackets 7 AM-1 PM EST / 8 AM-2 PM EDT, which
+    # covers the typical publish window in both winter and summer.
+    # workflow_dispatch still allows manual runs on any day.
+    - cron: '0 12-18 * * 2'
   workflow_dispatch:
     inputs:
       force_run:
